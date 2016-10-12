@@ -45,6 +45,7 @@ import json
 import os
 import sys
 import time
+import socket
 import logging
 
 from boto.ec2 import connect_to_region as connect_to_ec2
@@ -54,6 +55,7 @@ from subprocess import call, check_output
 
 
 ROLE = 'eip'
+SERF_PORT = 7946
 logger = None
 
 
@@ -201,6 +203,24 @@ def log(message, level=logging.INFO):
     logger.log(level, '[%s-FAILOVER] event=%s, message=%s' % (ROLE, event, message))
 
 
+def is_member_down(member_ip):
+    result = -1
+    total_retries = 5
+    while total_retries > 0:
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            result = sock.connect_ex((member_ip, SERF_PORT))
+            if result == 0:
+                break
+        except Exception as ex:
+            log("Exception in is_member_down(), error=%s" % str(ex))
+        finally:
+            log("Retrying, checking if member is down, status_code=%s" % result)
+            total_retries -= 1
+            time.sleep(3)
+    return False if result == 0 else True
+
+
 def get_serf_members():
     members = map(SerfMember.parse, sys.stdin.readlines())
     members = [x for x in members if x.role == ROLE]
@@ -233,6 +253,12 @@ def main():
             log('Detach interface done')
         elif event in ['member-leave', 'member-failed']:
             for member in members:
+                log("Member reported left/failed, ip=%s, az=%s" % (member.ip, member.az))
+                if not is_member_down(member.ip):
+                    log("False positive, member is up. Ignoring ...")
+                    continue
+
+                log("Confirmed, member is down")
                 handler.attach_interface()
                 log('Attach interface for az=%s done' % member.az)
                 handler.handle(az=member.az)
