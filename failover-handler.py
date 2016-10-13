@@ -205,7 +205,7 @@ def log(message, level=logging.INFO):
 
 def is_member_down(member_ip):
     result = -1
-    total_retries = 5
+    total_retries = 3
     while total_retries > 0:
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -217,7 +217,7 @@ def is_member_down(member_ip):
         finally:
             log("Retrying, checking if member is down, status_code=%s" % result)
             total_retries -= 1
-            time.sleep(3)
+            time.sleep(1)
     return False if result == 0 else True
 
 
